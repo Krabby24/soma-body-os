@@ -832,7 +832,14 @@ function renderMilestones() {
 function drawBody() {
   const canvas = document.getElementById('body-canvas'); if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0,0,200,340);
+  const dpr = window.devicePixelRatio || 1;
+  const w = 200, h = 340;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0,0,w,h);
   const avg = Object.values(systemValues).reduce((a,b)=>a+b,0)/Object.values(systemValues).length;
   const mainColor = avg>=70?'#00ffb4':avg>=45?'#ffaa00':'#ff3e6c';
   ctx.shadowBlur=15; ctx.shadowColor=mainColor; ctx.strokeStyle=mainColor; ctx.lineWidth=1.5;
@@ -896,7 +903,14 @@ function renderBodyModalRings() {
 function drawBodyModal() {
   const canvas = document.getElementById('body-canvas-modal'); if (!canvas) return;
   const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
   const w = 180, h = 300;
+  // Scala il canvas per schermi ad alta densità
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
   ctx.clearRect(0,0,w,h);
   const avg = Object.values(systemValues).reduce((a,b)=>a+b,0)/Object.values(systemValues).length;
   const mainColor = avg>=70?'#00ffb4':avg>=45?'#ffaa00':'#ff3e6c';
