@@ -617,6 +617,74 @@ function drawBody() {
 }
 setInterval(drawBody, 2000);
 
+window.openBodyModal = function() {
+  document.getElementById('body-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  drawBodyModal();
+  renderBodyModalRings();
+};
+window.closeBodyModal = function() {
+  document.getElementById('body-modal').classList.remove('open');
+  document.body.style.overflow = '';
+};
+
+function renderBodyModalRings() {
+  const c = document.getElementById('body-modal-rings'); if (!c) return;
+  const labels = tr('sys-labels'); const keys = Object.keys(systemValues);
+  c.innerHTML = keys.map((k,i) => {
+    const v = systemValues[k];
+    const col = v>=70?'var(--accent)':v>=45?'var(--warn)':'var(--accent3)';
+    return `<div class="system-ring-item">
+      <div class="system-ring-label">${labels[i]||k}</div>
+      <div class="system-ring-bar"><div class="system-ring-fill" style="width:${v}%;background:${col}"></div></div>
+      <div class="system-ring-val">${v}</div>
+    </div>`;
+  }).join('');
+}
+
+function drawBodyModal() {
+  const canvas = document.getElementById('body-canvas-modal'); if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = 180, h = 300;
+  ctx.clearRect(0,0,w,h);
+  const avg = Object.values(systemValues).reduce((a,b)=>a+b,0)/Object.values(systemValues).length;
+  const mainColor = avg>=70?'#00ffb4':avg>=45?'#ffaa00':'#ff3e6c';
+  ctx.shadowBlur=15; ctx.shadowColor=mainColor; ctx.strokeStyle=mainColor; ctx.lineWidth=1.5;
+  const s = 0.85;
+  const dx = 10;
+  ctx.beginPath(); ctx.arc(90+dx,30*s,20*s,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(83+dx,49*s); ctx.lineTo(79+dx,63*s); ctx.moveTo(97+dx,49*s); ctx.lineTo(101+dx,63*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(79+dx,63*s); ctx.lineTo(50+dx,75*s); ctx.moveTo(101+dx,63*s); ctx.lineTo(130+dx,75*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(79+dx,63*s); ctx.lineTo(76+dx,142*s); ctx.moveTo(101+dx,63*s); ctx.lineTo(104+dx,142*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(76+dx,142*s); ctx.lineTo(104+dx,142*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(79+dx,63*s); ctx.lineTo(101+dx,63*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(50+dx,75*s); ctx.lineTo(38+dx,125*s); ctx.lineTo(35+dx,160*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(130+dx,75*s); ctx.lineTo(142+dx,125*s); ctx.lineTo(145+dx,160*s); ctx.stroke();
+  ctx.beginPath(); ctx.arc(35+dx,163*s,4,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(145+dx,163*s,4,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(76+dx,142*s); ctx.lineTo(69+dx,155*s); ctx.moveTo(104+dx,142*s); ctx.lineTo(111+dx,155*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(69+dx,155*s); ctx.lineTo(111+dx,155*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(69+dx,155*s); ctx.lineTo(64+dx,228*s); ctx.lineTo(62+dx,268*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(111+dx,155*s); ctx.lineTo(116+dx,228*s); ctx.lineTo(118+dx,268*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(62+dx,268*s); ctx.lineTo(52+dx,275*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(118+dx,268*s); ctx.lineTo(128+dx,275*s); ctx.stroke();
+  const pts = [
+    {x:90+dx,y:30*s,k:'MENTAL'},{x:90+dx,y:80*s,k:'IMMUNE'},{x:90+dx,y:100*s,k:'NUTRITION'},
+    {x:90+dx,y:122*s,k:'ENERGY'},{x:90+dx,y:142*s,k:'FITNESS'},
+    {x:64+dx,y:195*s,k:'HYDRATION'},{x:116+dx,y:195*s,k:'SLEEP'}
+  ];
+  pts.forEach(p => {
+    const val = systemValues[p.k]||70;
+    const col = val>=70?'#00ffb4':val>=45?'#ffaa00':'#ff3e6c';
+    ctx.shadowBlur=18; ctx.shadowColor=col; ctx.fillStyle=col;
+    ctx.beginPath(); ctx.arc(p.x,p.y,4+(val/100)*2.5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle=col; ctx.lineWidth=0.8; ctx.globalAlpha=0.3;
+    ctx.beginPath(); ctx.arc(p.x,p.y,9+(val/100)*4,0,Math.PI*2); ctx.stroke();
+    ctx.globalAlpha=1;
+  });
+  ctx.shadowBlur=0;
+}
+
 window.switchTab = function(tab) {
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -787,7 +855,20 @@ window.switchTab = function(tab) {
   .tab-content{display:none;} .tab-content.active{display:flex;flex-direction:column;gap:20px;}
   .body-visual-wrap{display:flex;justify-content:center;align-items:center;}
   #body-canvas{filter:drop-shadow(0 0 20px rgba(0,255,180,0.3));}
+
+  /* BODY MODAL mobile fullscreen */
+  .body-modal{display:none;position:fixed;inset:0;z-index:500;background:rgba(2,4,8,0.97);backdrop-filter:blur(20px);flex-direction:column;align-items:center;justify-content:center;gap:20px;}
+  .body-modal.open{display:flex;}
+  .body-modal-title{font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:0.4em;color:var(--accent);text-shadow:var(--glow);}
+  .body-modal-close{position:absolute;top:20px;right:20px;width:44px;height:44px;border:1px solid var(--border);border-radius:50%;background:transparent;color:var(--text-dim);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;}
+  .body-modal-close:hover{border-color:var(--accent);color:var(--accent);}
+  .body-modal-rings{width:88%;display:flex;flex-direction:column;gap:8px;}
+  /* FAB button — hidden on desktop */
+  .body-btn{display:none;position:fixed;bottom:72px;right:16px;z-index:200;width:50px;height:50px;border-radius:50%;background:var(--bg2);border:1px solid var(--accent);color:var(--accent);font-size:24px;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--glow);transition:all 0.2s;}
+  .body-btn:active{transform:scale(0.9);}
+
   @media(max-width:900px){
+    .body-btn{display:flex;}
     /* LAYOUT — 1 colonna, sidebar in basso come tab bar */
     .main-layout{
       grid-template-columns:1fr;
@@ -886,6 +967,17 @@ window.switchTab = function(tab) {
 </head>
 <body>
 <canvas id="bg-canvas"></canvas>
+
+<!-- BODY MODAL (mobile fullscreen) -->
+<div class="body-modal" id="body-modal">
+  <button class="body-modal-close" onclick="closeBodyModal()">✕</button>
+  <div class="body-modal-title">BODY SYSTEM STATUS</div>
+  <canvas id="body-canvas-modal" width="180" height="300" style="filter:drop-shadow(0 0 20px rgba(0,255,180,0.3))"></canvas>
+  <div class="body-modal-rings" id="body-modal-rings"></div>
+</div>
+
+<!-- FAB button (mobile only) -->
+<button class="body-btn" onclick="openBodyModal()" title="View Body">🫀</button>
 
 <!-- BOOT -->
 <div class="screen" id="screen-boot">
