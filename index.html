@@ -788,13 +788,99 @@ window.switchTab = function(tab) {
   .body-visual-wrap{display:flex;justify-content:center;align-items:center;}
   #body-canvas{filter:drop-shadow(0 0 20px rgba(0,255,180,0.3));}
   @media(max-width:900px){
-    .main-layout{grid-template-columns:1fr;grid-template-rows:60px auto 1fr auto;}
-    .sidebar{flex-direction:row;border-right:none;border-bottom:1px solid var(--border);padding:0;overflow-x:auto;}
-    .nav-item{border-left:none;border-bottom:2px solid transparent;padding:16px;white-space:nowrap;}
-    .nav-item.active{border-bottom-color:var(--accent);border-left:none;}
-    .right-panel{border-left:none;border-top:1px solid var(--border);}
-    .topbar{grid-column:1;}
-    .auth-box{width:90vw;padding:32px 24px;}
+    /* LAYOUT — 1 colonna, sidebar in basso come tab bar */
+    .main-layout{
+      grid-template-columns:1fr;
+      grid-template-rows:56px 1fr 56px;
+      height:100vh;
+      overflow:hidden;
+    }
+    /* TOPBAR */
+    .topbar{
+      grid-column:1;
+      grid-row:1;
+      padding:0 14px;
+      gap:8px;
+    }
+    .topbar-logo{font-size:16px;letter-spacing:0.2em;}
+    .topbar-score{padding:4px 10px;font-size:9px;}
+    .sync-indicator{display:none;}
+    #topbar-username{display:none;}
+    /* CONTENT — area scrollabile centrale */
+    .content{
+      grid-column:1;
+      grid-row:2;
+      padding:14px;
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+    }
+    /* SIDEBAR — bottom tab bar fissa */
+    .sidebar{
+      grid-column:1;
+      grid-row:3;
+      flex-direction:row;
+      border-right:none;
+      border-top:1px solid var(--border);
+      border-bottom:none;
+      padding:0;
+      overflow-x:auto;
+      background:rgba(2,4,8,0.95);
+      backdrop-filter:blur(20px);
+      position:fixed;
+      bottom:0;left:0;right:0;
+      z-index:50;
+      height:56px;
+    }
+    .nav-item{
+      flex:1;
+      flex-direction:column;
+      border-left:none;
+      border-top:2px solid transparent;
+      border-bottom:none;
+      padding:8px 4px;
+      gap:3px;
+      font-size:8px;
+      letter-spacing:0.1em;
+      justify-content:center;
+      align-items:center;
+      min-width:0;
+    }
+    .nav-item.active{border-top-color:var(--accent);border-left:none;background:rgba(0,255,180,0.05);}
+    .nav-icon{font-size:18px;width:auto;}
+    /* NASCONDI completamente il pannello destro (scheletro) su mobile */
+    .right-panel{display:none !important;}
+    /* METRICHE — 2 colonne su mobile */
+    .metrics-grid{grid-template-columns:1fr 1fr;gap:8px;}
+    .metric-card{padding:10px;}
+    .metric-value{font-size:18px;}
+    /* FIELDS GRID — 1 colonna su mobile */
+    .fields-grid{grid-template-columns:1fr;}
+    .field-full{grid-column:1;}
+    /* LOG ROW — verticale su mobile */
+    .log-row{flex-direction:column;}
+    .btn-add{width:100%;}
+    /* SYSTEM RINGS */
+    .system-ring-label{width:70px;font-size:8px;}
+    /* AUTH */
+    .auth-box{width:92vw;padding:28px 20px;}
+    /* ONBOARDING */
+    .onboarding-wrap{padding:28px 20px;}
+    /* PANELS */
+    .panel{padding:14px;}
+    .panel-title{font-size:9px;margin-bottom:12px;}
+    /* TOPBAR score */
+    .topbar-score span{font-size:14px;}
+    /* NOTIFICHE */
+    .notification{right:12px;left:12px;font-size:10px;}
+    /* LOG CATEGORIES scrollabili */
+    .log-categories{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;}
+    .log-categories::-webkit-scrollbar{display:none;}
+    .log-cat{white-space:nowrap;flex-shrink:0;}
+    /* CHIPS */
+    .checkbox-group{gap:6px;}
+    .chip{padding:5px 10px;font-size:9px;}
+    /* EVO CHART */
+    .evo-chart{height:90px;}
   }
 </style>
 </head>
