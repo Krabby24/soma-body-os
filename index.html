@@ -196,6 +196,45 @@ async function fbLoadSystem(uid) {
   try { const d = await getDoc(doc(db, 'users', uid, 'data', 'system')); return d.exists() ? (d.data().values || null) : null; } catch(e) { return null; }
 }
 
+async function fbSaveWeekly(uid, weeklyMap) {
+  try { await setDoc(doc(db, 'users', uid, 'data', 'weekly'), { map: weeklyMap, updated: Date.now() }, { merge: true }); } catch(e) { console.error(e); }
+}
+async function fbLoadWeekly(uid) {
+  try { const d = await getDoc(doc(db, 'users', uid, 'data', 'weekly')); return d.exists() ? (d.data().map || {}) : {}; } catch(e) { return {}; }
+}
+
+// ── WEEKLY DATA UTILS ──
+// weeklyMap = { "2024-06-10": 74, "2024-06-11": 68, ... }
+let weeklyMap = {};
+
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function updateWeeklyMap() {
+  const avg = Math.round(Object.values(systemValues).reduce((a,b)=>a+b,0)/Object.values(systemValues).length);
+  weeklyMap[todayKey()] = avg;
+  // salva su Firebase
+  if (currentUser) fbSaveWeekly(currentUser.uid, weeklyMap);
+}
+
+function buildWeeklyData() {
+  // Costruisce array di 7 giorni (lun→dom della settimana corrente)
+  const result = [];
+  const today = new Date();
+  // Trova il lunedì di questa settimana
+  const dayOfWeek = today.getDay(); // 0=dom, 1=lun, ...
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + mondayOffset + i);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    result.push(weeklyMap[key] || null); // null = nessun dato per quel giorno
+  }
+  return result;
+}
+
 // show sync indicator
 function showSync(done) {
   const el = document.getElementById('sync-indicator');
@@ -215,8 +254,12 @@ onAuthStateChanged(auth, async (user) => {
       if (profile.onboarded) {
         const sys = await fbLoadSystem(user.uid);
         const logs = await fbLoadLogs(user.uid);
+        const weekly = await fbLoadWeekly(user.uid);
         if (sys) systemValues = sys;
         if (logs) logEntries = logs;
+        if (weekly) weeklyMap = weekly;
+        // aggiorna il valore di oggi
+        updateWeeklyMap();
         showSync(true);
         showScreen('screen-main');
         setTimeout(renderDashboard, 100);
@@ -509,6 +552,7 @@ window.submitLog = async function() {
   if (currentUser) {
     await fbSaveLogs(currentUser.uid, logEntries);
     await fbSaveSystem(currentUser.uid, systemValues);
+    updateWeeklyMap();
   }
   showSync(true);
 };
@@ -544,19 +588,193 @@ function renderQuickBtns() {
     renderSystemRings(); renderMetricsGrid(); renderLogFeed('log-feed-dashboard',4); renderLogFeed('log-feed-full',20); updateMomentum(); drawBody(); renderEvolution();
     showNotif(`${entry.icon} ${entry.catLabel} logged`);
     showSync(false);
-    if (currentUser) { await fbSaveLogs(currentUser.uid,logEntries); await fbSaveSystem(currentUser.uid,systemValues); }
+    if (currentUser) { await fbSaveLogs(currentUser.uid,logEntries); await fbSaveSystem(currentUser.uid,systemValues); updateWeeklyMap(); }
     showSync(true);
   };
 }
 
+function generateSmartAdvice() {
+  // Analizza i dati reali dell'utente e genera consigli dinamici personalizzati
+  const advices = [];
+  const it = lang === 'it';
+  const es = lang === 'es';
+  const fr = lang === 'fr';
+  const de = lang === 'de';
+  const pt = lang === 'pt';
+
+  // ── SONNO ──
+  if (systemValues.SLEEP < 50) {
+    advices.push({ p:'high', icon:'😴', t:
+      it ? `Il tuo sistema SONNO è critico (${systemValues.SLEEP}/100). Dormi almeno 7-8 ore stasera — è la priorità assoluta per il tuo corpo.` :
+      es ? `Tu sistema SUEÑO está crítico (${systemValues.SLEEP}/100). Duerme al menos 7-8 horas esta noche.` :
+      fr ? `Votre système SOMMEIL est critique (${systemValues.SLEEP}/100). Dormez au moins 7-8 heures ce soir.` :
+      de ? `Ihr SCHLAF-System ist kritisch (${systemValues.SLEEP}/100). Schlafen Sie heute Nacht mindestens 7-8 Stunden.` :
+      pt ? `Seu sistema SONO está crítico (${systemValues.SLEEP}/100). Durma pelo menos 7-8 horas esta noite.` :
+      `Your SLEEP system is critical (${systemValues.SLEEP}/100). Prioritize 7-8 hours tonight — everything else depends on it.`
+    });
+  } else if (systemValues.SLEEP < 70) {
+    advices.push({ p:'med', icon:'😴', t:
+      it ? `Il sonno è sotto la media (${systemValues.SLEEP}/100). Prova ad andare a letto 30 minuti prima stasera e evita schermi nell'ultima ora.` :
+      es ? `El sueño está bajo la media (${systemValues.SLEEP}/100). Intenta acostarte 30 min antes y evita pantallas.` :
+      fr ? `Le sommeil est en dessous de la moyenne (${systemValues.SLEEP}/100). Essayez de vous coucher 30 min plus tôt.` :
+      de ? `Schlaf unter dem Durchschnitt (${systemValues.SLEEP}/100). Gehen Sie 30 Minuten früher ins Bett.` :
+      pt ? `Sono abaixo da média (${systemValues.SLEEP}/100). Tente dormir 30 min mais cedo esta noite.` :
+      `Sleep is below average (${systemValues.SLEEP}/100). Try going to bed 30 min earlier and avoid screens in the last hour.`
+    });
+  }
+
+  // ── IDRATAZIONE ──
+  if (systemValues.HYDRATION < 45) {
+    advices.push({ p:'high', icon:'💧', t:
+      it ? `Idratazione critica (${systemValues.HYDRATION}/100)! Bevi subito un bicchiere d'acqua. La disidratazione riduce la concentrazione del 30%.` :
+      es ? `¡Hidratación crítica (${systemValues.HYDRATION}/100)! Bebe agua ahora mismo.` :
+      fr ? `Hydratation critique (${systemValues.HYDRATION}/100) ! Buvez un verre d'eau immédiatement.` :
+      de ? `Kritische Hydration (${systemValues.HYDRATION}/100)! Trinken Sie sofort ein Glas Wasser.` :
+      pt ? `Hidratação crítica (${systemValues.HYDRATION}/100)! Beba um copo de água agora.` :
+      `Critical hydration (${systemValues.HYDRATION}/100)! Drink a glass of water right now. Dehydration reduces focus by 30%.`
+    });
+  } else if (systemValues.HYDRATION < 65) {
+    advices.push({ p:'med', icon:'💧', t:
+      it ? `Idratazione bassa (${systemValues.HYDRATION}/100). Punta a 2L d'acqua al giorno — imposta un promemoria ogni 90 minuti.` :
+      es ? `Hidratación baja (${systemValues.HYDRATION}/100). Apunta a 2L de agua al día.` :
+      fr ? `Hydratation faible (${systemValues.HYDRATION}/100). Visez 2L d'eau par jour.` :
+      de ? `Niedrige Hydration (${systemValues.HYDRATION}/100). Trinken Sie täglich 2L Wasser.` :
+      pt ? `Hidratação baixa (${systemValues.HYDRATION}/100). Beba 2L de água por dia.` :
+      `Low hydration (${systemValues.HYDRATION}/100). Aim for 2L of water today — set a reminder every 90 minutes.`
+    });
+  }
+
+  // ── FITNESS ──
+  if (systemValues.FITNESS < 45) {
+    advices.push({ p:'high', icon:'🏃', t:
+      it ? `Il fitness è molto basso (${systemValues.FITNESS}/100). Anche una camminata di 20 minuti oggi farebbe salire significativamente questo valore.` :
+      es ? `Fitness muy bajo (${systemValues.FITNESS}/100). Incluso 20 min de caminata mejoraría esto.` :
+      fr ? `Fitness très bas (${systemValues.FITNESS}/100). Même 20 min de marche améliorerait cela.` :
+      de ? `Fitness sehr niedrig (${systemValues.FITNESS}/100). Schon 20 Min Spaziergang würde helfen.` :
+      pt ? `Fitness muito baixo (${systemValues.FITNESS}/100). Mesmo 20 min de caminhada ajudaria.` :
+      `Fitness very low (${systemValues.FITNESS}/100). Even a 20-minute walk today would make a significant difference.`
+    });
+  } else if (systemValues.FITNESS < 65) {
+    advices.push({ p:'med', icon:'💪', t:
+      it ? `Il fitness è nella media (${systemValues.FITNESS}/100). Aggiungi 2-3 sessioni di allenamento questa settimana per superare 70.` :
+      es ? `Fitness en la media (${systemValues.FITNESS}/100). Añade 2-3 sesiones de entrenamiento esta semana.` :
+      fr ? `Fitness dans la moyenne (${systemValues.FITNESS}/100). Ajoutez 2-3 séances d'entraînement cette semaine.` :
+      de ? `Fitness im Durchschnitt (${systemValues.FITNESS}/100). Fügen Sie 2-3 Trainingseinheiten hinzu.` :
+      pt ? `Fitness na média (${systemValues.FITNESS}/100). Adicione 2-3 sessões de treino esta semana.` :
+      `Fitness is average (${systemValues.FITNESS}/100). Add 2-3 workout sessions this week to push above 70.`
+    });
+  }
+
+  // ── NUTRIZIONE ──
+  if (systemValues.NUTRITION < 50) {
+    advices.push({ p:'high', icon:'🍎', t:
+      it ? `Nutrizione critica (${systemValues.NUTRITION}/100). Registra i tuoi pasti oggi — la consapevolezza è il primo passo per migliorare.` :
+      es ? `Nutrición crítica (${systemValues.NUTRITION}/100). Registra tus comidas hoy.` :
+      fr ? `Nutrition critique (${systemValues.NUTRITION}/100). Enregistrez vos repas aujourd'hui.` :
+      de ? `Ernährung kritisch (${systemValues.NUTRITION}/100). Protokollieren Sie heute Ihre Mahlzeiten.` :
+      pt ? `Nutrição crítica (${systemValues.NUTRITION}/100). Registre suas refeições hoje.` :
+      `Nutrition critical (${systemValues.NUTRITION}/100). Start logging your meals today — awareness is the first step.`
+    });
+  }
+
+  // ── MENTALE ──
+  if (systemValues.MENTAL < 50) {
+    advices.push({ p:'high', icon:'🧠', t:
+      it ? `Il tuo stato mentale è basso (${systemValues.MENTAL}/100). Prova 5 minuti di respirazione profonda adesso — scientificamente provato per ridurre lo stress acuto.` :
+      es ? `Estado mental bajo (${systemValues.MENTAL}/100). Prueba 5 min de respiración profunda ahora.` :
+      fr ? `État mental bas (${systemValues.MENTAL}/100). Essayez 5 min de respiration profonde maintenant.` :
+      de ? `Mentaler Zustand niedrig (${systemValues.MENTAL}/100). Versuchen Sie 5 Min tiefes Atmen.` :
+      pt ? `Estado mental baixo (${systemValues.MENTAL}/100). Tente 5 min de respiração profunda agora.` :
+      `Mental state is low (${systemValues.MENTAL}/100). Try 5 minutes of deep breathing right now — proven to reduce acute stress.`
+    });
+  } else if (systemValues.MENTAL < 65) {
+    advices.push({ p:'med', icon:'🧘', t:
+      it ? `Il mentale potrebbe migliorare (${systemValues.MENTAL}/100). Considera 10 minuti di meditazione prima di dormire — migliora anche la qualità del sonno.` :
+      es ? `El estado mental puede mejorar (${systemValues.MENTAL}/100). Considera 10 min de meditación antes de dormir.` :
+      fr ? `L'état mental peut s'améliorer (${systemValues.MENTAL}/100). Essayez 10 min de méditation avant de dormir.` :
+      de ? `Mentaler Zustand kann verbessert werden (${systemValues.MENTAL}/100). Versuchen Sie 10 Min Meditation vor dem Schlafen.` :
+      pt ? `Estado mental pode melhorar (${systemValues.MENTAL}/100). Tente 10 min de meditação antes de dormir.` :
+      `Mental state could improve (${systemValues.MENTAL}/100). Try 10 minutes of meditation before sleep — it also improves sleep quality.`
+    });
+  }
+
+  // ── ENERGIA ──
+  if (systemValues.ENERGY < 50) {
+    advices.push({ p:'med', icon:'⚡', t:
+      it ? `Energia bassa (${systemValues.ENERGY}/100). Controlla sonno, idratazione e nutrizione — sono i tre pilastri dell'energia.` :
+      es ? `Energía baja (${systemValues.ENERGY}/100). Revisa sueño, hidratación y nutrición.` :
+      fr ? `Énergie basse (${systemValues.ENERGY}/100). Vérifiez sommeil, hydratation et nutrition.` :
+      de ? `Niedrige Energie (${systemValues.ENERGY}/100). Überprüfen Sie Schlaf, Hydration und Ernährung.` :
+      pt ? `Energia baixa (${systemValues.ENERGY}/100). Verifique sono, hidratação e nutrição.` :
+      `Energy low (${systemValues.ENERGY}/100). Check your sleep, hydration, and nutrition — they are the three pillars of energy.`
+    });
+  }
+
+  // ── IMMUNITARIO ──
+  if (systemValues.IMMUNE < 50) {
+    advices.push({ p:'med', icon:'🛡️', t:
+      it ? `Sistema immunitario sotto pressione (${systemValues.IMMUNE}/100). Aumenta vitamine C e D, dormi di più e riduci lo stress.` :
+      es ? `Sistema inmune bajo presión (${systemValues.IMMUNE}/100). Aumenta vitaminas C y D, duerme más.` :
+      fr ? `Système immunitaire sous pression (${systemValues.IMMUNE}/100). Augmentez vitamines C et D.` :
+      de ? `Immunsystem unter Druck (${systemValues.IMMUNE}/100). Mehr Vitamin C und D, mehr Schlaf.` :
+      pt ? `Sistema imune sob pressão (${systemValues.IMMUNE}/100). Aumente vitamina C e D, durma mais.` :
+      `Immune system under pressure (${systemValues.IMMUNE}/100). Boost vitamins C & D, get more sleep, and reduce stress.`
+    });
+  }
+
+  // ── CONSIGLI POSITIVI se tutto va bene ──
+  const avg = Object.values(systemValues).reduce((a,b)=>a+b,0)/Object.values(systemValues).length;
+  if (avg >= 75) {
+    advices.push({ p:'low', icon:'🌟', t:
+      it ? `Il tuo sistema è in ottima forma (media ${Math.round(avg)}/100)! Mantieni questa routine — la costanza è la chiave del progresso a lungo termine.` :
+      es ? `¡Tu sistema está en excelente forma (media ${Math.round(avg)}/100)! Mantén esta rutina.` :
+      fr ? `Votre système est en excellente forme (moyenne ${Math.round(avg)}/100) ! Maintenez cette routine.` :
+      de ? `Ihr System ist in ausgezeichneter Form (Durchschnitt ${Math.round(avg)}/100)! Halten Sie diese Routine bei.` :
+      pt ? `Seu sistema está em ótima forma (média ${Math.round(avg)}/100)! Mantenha essa rotina.` :
+      `Your system is in great shape (avg ${Math.round(avg)}/100)! Consistency is the key — keep this routine going.`
+    });
+  }
+
+  // ── BASATO SUI LOG — se pochi log oggi ──
+  const todayLogs = logEntries.filter(e => {
+    const d = new Date(e.timestamp);
+    const now = new Date();
+    return d.toDateString() === now.toDateString();
+  });
+  if (todayLogs.length === 0) {
+    advices.push({ p:'low', icon:'📝', t:
+      it ? `Non hai ancora registrato nulla oggi. Inizia dal Quick Log — bastano 3 secondi per tenere traccia di acqua, pasti o sonno.` :
+      es ? `No has registrado nada hoy. Empieza con el Quick Log.` :
+      fr ? `Vous n'avez rien enregistré aujourd'hui. Commencez avec le Quick Log.` :
+      de ? `Sie haben heute noch nichts protokolliert. Starten Sie mit dem Quick Log.` :
+      pt ? `Você não registrou nada hoje. Comece com o Quick Log.` :
+      `Nothing logged today yet. Start with Quick Log — it takes 3 seconds to track water, meals, or sleep.`
+    });
+  }
+
+  // Se non ci sono problemi critici mostra almeno un consiglio generale
+  if (advices.length === 0) {
+    advices.push({ p:'low', icon:'✅', t:
+      it ? 'Tutti i sistemi sono nella norma. Continua così e registra le tue attività quotidiane per consigli più precisi.' :
+      'All systems are within normal range. Keep it up and log your daily activities for more precise advice.'
+    });
+  }
+
+  return advices.slice(0, 5); // max 5 consigli
+}
+
 function renderAdvice() {
   const c = document.getElementById('advice-list'); if (!c) return;
-  const advice = tr('advice');
-  const colorMap = {high:'var(--accent3)',med:'var(--warn)',low:'var(--accent)'};
-  c.innerHTML = advice.map(a=>`<div class="advice-item">
-    <div class="advice-priority ${a.p}" style="background:${colorMap[a.p]}"></div>
-    <div>${a.t}</div>
-  </div>`).join('');
+  const advices = generateSmartAdvice();
+  const colorMap = {high:'var(--accent3)', med:'var(--warn)', low:'var(--accent)'};
+  c.innerHTML = advices.map(a=>`
+    <div class="advice-item">
+      <div class="advice-priority ${a.p}" style="background:${colorMap[a.p]}"></div>
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <span style="font-size:18px;flex-shrink:0">${a.icon}</span>
+        <span>${a.t}</span>
+      </div>
+    </div>`).join('');
 }
 
 function renderEvolution() {
@@ -564,12 +782,45 @@ function renderEvolution() {
   const labels = document.getElementById('evo-labels');
   if (!chart||!labels) return;
   const days = tr('days');
-  chart.innerHTML = weeklyData.map((v,i)=>{
-    const h = (v/100)*110;
-    const col = v>=70?'var(--accent)':v>=50?'var(--warn)':'var(--accent3)';
-    return `<div class="evo-bar" style="height:${h}px;background:${col};opacity:${0.5+i*0.07}" data-val="${v}"></div>`;
+  const realData = buildWeeklyData(); // [74, null, 68, 80, null, null, 72]
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const todayIdx = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // lun=0 ... dom=6
+
+  chart.innerHTML = realData.map((v,i)=>{
+    const isFuture = i > todayIdx;
+    const hasData = v !== null;
+    const val = hasData ? v : 0;
+    const h = hasData ? (val/100)*110 : 4;
+    const col = isFuture
+      ? 'var(--border)'
+      : !hasData
+        ? 'rgba(0,255,180,0.15)'
+        : val>=70?'var(--accent)':val>=50?'var(--warn)':'var(--accent3)';
+    const isToday = i === todayIdx;
+    const label = hasData ? `${val}` : isFuture ? '—' : '?';
+    return `<div class="evo-bar" style="height:${Math.max(h,4)}px;background:${col};opacity:1;${isToday?'box-shadow:0 0 8px var(--accent);':''}" data-val="${label}"></div>`;
   }).join('');
-  labels.innerHTML = days.map(d=>`<div class="evo-label">${d}</div>`).join('');
+
+  labels.innerHTML = days.map((d,i)=>{
+    const isToday = i === todayIdx;
+    return `<div class="evo-label" style="${isToday?'color:var(--accent);font-weight:700;':''}">${d}</div>`;
+  }).join('');
+
+  // Summary sotto il grafico
+  const filled = realData.filter(v=>v!==null);
+  const avgWeek = filled.length ? Math.round(filled.reduce((a,b)=>a+b,0)/filled.length) : 0;
+  const trend = filled.length >= 2 ? filled[filled.length-1] - filled[0] : 0;
+  const summaryEl = document.getElementById('evo-summary');
+  if (summaryEl) {
+    const trendText = trend > 0 ? `↑ +${trend}` : trend < 0 ? `↓ ${trend}` : '→ stabile';
+    const trendCol = trend > 0 ? 'var(--accent)' : trend < 0 ? 'var(--accent3)' : 'var(--text-dim)';
+    summaryEl.innerHTML = `
+      <span style="color:var(--text-dim);font-size:9px;letter-spacing:0.2em">MEDIA SETTIMANA</span>
+      <span style="font-family:'Orbitron',sans-serif;font-size:18px;color:var(--accent)">${avgWeek > 0 ? avgWeek : '—'}</span>
+      <span style="font-size:10px;color:${trendCol}">${filled.length >= 2 ? trendText : ''}</span>
+    `;
+  }
 }
 
 function renderMilestones() {
@@ -1061,7 +1312,7 @@ window.switchTab = function(tab) {
         <div class="panel"><div class="panel-title" data-i18n="ai-advice">AI SYSTEM ADVICE</div><div class="advice-list" id="advice-list"></div></div>
       </div>
       <div class="tab-content" id="tab-evolution">
-        <div class="panel"><div class="panel-title" data-i18n="weekly-evo">WEEKLY EVOLUTION</div><div class="evo-chart" id="evo-chart"></div><div class="evo-labels" id="evo-labels"></div></div>
+        <div class="panel"><div class="panel-title" data-i18n="weekly-evo">WEEKLY EVOLUTION</div><div class="evo-chart" id="evo-chart"></div><div class="evo-labels" id="evo-labels"></div><div id="evo-summary" style="display:flex;align-items:center;gap:16px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)"></div></div>
         <div class="panel"><div class="panel-title" data-i18n="milestones">MILESTONES</div><div id="milestones-list" style="display:flex;flex-direction:column;gap:10px"></div></div>
       </div>
     </div>
