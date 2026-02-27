@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOMA — Your Body OS</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+<!-- FIREBASE SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ── FIREBASE CONFIG ──
+const firebaseConfig = {
+  apiKey: "AIzaSyDsmr5R6aOshQZR5lEcCm9y_2ZbafsQNUk",
+  authDomain: "soma-body-os.firebaseapp.com",
+  projectId: "soma-body-os",
+  storageBucket: "soma-body-os.firebasestorage.app",
+  messagingSenderId: "986746668361",
+  appId: "1:986746668361:web:5abf7c56765f3ed60e4698"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ── GLOBALS ──
+let lang = 'en';
+let currentUser = null;
+let logEntries = [];
+let systemValues = { ENERGY:78, SLEEP:65, NUTRITION:72, FITNESS:55, HYDRATION:60, MENTAL:80, IMMUNE:70 };
+let metrics = { sleep:6.5, water:1.4, calories:1800, steps:4200, mood:7, stress:4 };
+let weeklyData = [62,68,71,65,78,74,87];
+let onboardingStep = 0;
+let chipSelections = {};
+let activeLogCat = 0;
+const TOTAL_ONBOARDING_STEPS = 4;
+
+// ── TRANSLATIONS ──
+const T = {
+  en: {
+    "auth-sub":"BODY OPERATING SYSTEM — v2.4.1","login":"LOGIN","register":"REGISTER",
+    "email":"EMAIL ADDRESS","password":"PASSWORD","username":"USERNAME","language":"INTERFACE LANGUAGE",
+    "btn-login":"INITIALIZE SESSION","btn-register":"CREATE PROFILE","momentum":"MOMENTUM",
+    "nav-dashboard":"DASHBOARD","nav-log":"LOG","nav-advice":"ADVICE","nav-evolution":"EVOLUTION",
+    "system-status":"SYSTEM STATUS","today-metrics":"TODAY'S METRICS","recent-log":"RECENT ACTIVITY",
+    "log-data":"LOG DATA","log-history":"LOG HISTORY","ai-advice":"AI SYSTEM ADVICE",
+    "weekly-evo":"WEEKLY EVOLUTION","milestones":"MILESTONES","quick-log":"QUICK LOG",
+    "cats":["NUTRITION","SLEEP","FITNESS","HYDRATION","MENTAL","SOCIAL"],
+    "sys-labels":["ENERGY","SLEEP","NUTRITION","FITNESS","HYDRATION","MENTAL","IMMUNE"],
+    "days":["MON","TUE","WED","THU","FRI","SAT","SUN"],
+    "quick":["💧 Water","🍎 Meal","😴 Sleep","🏃 Workout","🧘 Mindfulness"],
+    "step-titles":["PHYSICAL PROFILE","LIFESTYLE","HABITS","GOALS"],
+    "step-descs":["Let's calibrate your body operating system","Tell us about your daily life","Your current habits and routines","What you want to optimize"],
+    "btn-next":"NEXT →","btn-back":"← BACK","btn-finish":"INITIALIZE SOMA",
+    "syncing":"SYNCING TO CLOUD...","synced":"✓ SYNCED",
+    "advice":[
+      {p:"high",t:"You slept less than 7h last 3 nights. Cognitive performance drops 30% — prioritize sleep tonight."},
+      {p:"med",t:"Hydration is 60% of target. Set a reminder every 90 minutes during work hours."},
+      {p:"med",t:"No fitness activity logged in 48h. A 20-min walk would boost your mood score significantly."},
+      {p:"low",t:"Your mental score peaks on Tuesday mornings — schedule deep work in that slot."}
+    ],
+    "milestones":[
+      {icon:"⚡",t:"7-day streak — consistency unlocked"},
+      {icon:"💧",t:"Hydration target hit 5 days in a row"},
+      {icon:"🧠",t:"Mental score improved +18% this month"}
+    ]
+  },
+  it: {
+    "auth-sub":"SISTEMA OPERATIVO DEL CORPO — v2.4.1","login":"ACCEDI","register":"REGISTRATI",
+    "email":"INDIRIZZO EMAIL","password":"PASSWORD","username":"NOME UTENTE","language":"LINGUA INTERFACCIA",
+    "btn-login":"INIZIALIZZA SESSIONE","btn-register":"CREA PROFILO","momentum":"MOMENTUM",
+    "nav-dashboard":"DASHBOARD","nav-log":"REGISTRO","nav-advice":"CONSIGLI","nav-evolution":"EVOLUZIONE",
+    "system-status":"STATO SISTEMA","today-metrics":"METRICHE OGGI","recent-log":"ATTIVITÀ RECENTE",
+    "log-data":"INSERISCI DATI","log-history":"STORICO","ai-advice":"CONSIGLI AI",
+    "weekly-evo":"EVOLUZIONE SETTIMANALE","milestones":"TRAGUARDI","quick-log":"INSERIMENTO RAPIDO",
+    "cats":["NUTRIZIONE","SONNO","FITNESS","IDRATAZIONE","MENTALE","SOCIALE"],
+    "sys-labels":["ENERGIA","SONNO","NUTRIZIONE","FITNESS","IDRATAZIONE","MENTALE","IMMUNITARIO"],
+    "days":["LUN","MAR","MER","GIO","VEN","SAB","DOM"],
+    "quick":["💧 Acqua","🍎 Pasto","😴 Sonno","🏃 Allenamento","🧘 Meditazione"],
+    "step-titles":["PROFILO FISICO","STILE DI VITA","ABITUDINI","OBIETTIVI"],
+    "step-descs":["Calibriamo il tuo sistema operativo corporeo","Parlaci della tua vita quotidiana","Le tue abitudini e routine attuali","Cosa vuoi ottimizzare"],
+    "btn-next":"AVANTI →","btn-back":"← INDIETRO","btn-finish":"INIZIALIZZA SOMA",
+    "syncing":"SINCRONIZZAZIONE...","synced":"✓ SINCRONIZZATO",
+    "advice":[
+      {p:"high",t:"Hai dormito meno di 7h nelle ultime 3 notti. Le performance cognitive calano del 30%."},
+      {p:"med",t:"L'idratazione è al 60% del target. Imposta un promemoria ogni 90 minuti."},
+      {p:"med",t:"Nessuna attività fisica da 48h. Una camminata di 20 min migliorerebbe il tuo umore."},
+      {p:"low",t:"Il tuo punteggio mentale è al picco il martedì mattina — pianifica il lavoro profondo allora."}
+    ],
+    "milestones":[
+      {icon:"⚡",t:"7 giorni consecutivi — costanza sbloccata"},
+      {icon:"💧",t:"Target idratazione raggiunto 5 giorni di fila"},
+      {icon:"🧠",t:"Punteggio mentale migliorato del +18% questo mese"}
+    ]
+  },
+  es: {
+    "auth-sub":"SISTEMA OPERATIVO CORPORAL — v2.4.1","login":"ACCEDER","register":"REGISTRARSE",
+    "email":"CORREO ELECTRÓNICO","password":"CONTRASEÑA","username":"NOMBRE DE USUARIO","language":"IDIOMA",
+    "btn-login":"INICIAR SESIÓN","btn-register":"CREAR PERFIL","momentum":"IMPULSO",
+    "nav-dashboard":"PANEL","nav-log":"REGISTRO","nav-advice":"CONSEJOS","nav-evolution":"EVOLUCIÓN",
+    "system-status":"ESTADO DEL SISTEMA","today-metrics":"MÉTRICAS HOY","recent-log":"ACTIVIDAD RECIENTE",
+    "log-data":"REGISTRAR DATOS","log-history":"HISTORIAL","ai-advice":"CONSEJOS IA",
+    "weekly-evo":"EVOLUCIÓN SEMANAL","milestones":"LOGROS","quick-log":"REGISTRO RÁPIDO",
+    "cats":["NUTRICIÓN","SUEÑO","FITNESS","HIDRATACIÓN","MENTAL","SOCIAL"],
+    "sys-labels":["ENERGÍA","SUEÑO","NUTRICIÓN","FITNESS","HIDRATACIÓN","MENTAL","INMUNE"],
+    "days":["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"],
+    "quick":["💧 Agua","🍎 Comida","😴 Sueño","🏃 Ejercicio","🧘 Meditación"],
+    "step-titles":["PERFIL FÍSICO","ESTILO DE VIDA","HÁBITOS","OBJETIVOS"],
+    "step-descs":["Calibremos tu sistema operativo corporal","Cuéntanos sobre tu vida diaria","Tus hábitos actuales","Lo que quieres optimizar"],
+    "btn-next":"SIGUIENTE →","btn-back":"← ATRÁS","btn-finish":"INICIALIZAR SOMA",
+    "syncing":"SINCRONIZANDO...","synced":"✓ SINCRONIZADO",
+    "advice":[{p:"high",t:"Has dormido menos de 7h las últimas 3 noches."},{p:"med",t:"Hidratación al 60%."},{p:"med",t:"Sin actividad física en 48h."},{p:"low",t:"Tu puntuación mental es mayor los martes por la mañana."}],
+    "milestones":[{icon:"⚡",t:"Racha de 7 días"},{icon:"💧",t:"Meta de hidratación 5 días seguidos"},{icon:"🧠",t:"Score mental +18% este mes"}]
+  },
+  fr: {
+    "auth-sub":"SYSTÈME D'EXPLOITATION CORPOREL — v2.4.1","login":"CONNEXION","register":"S'INSCRIRE",
+    "email":"ADRESSE EMAIL","password":"MOT DE PASSE","username":"NOM D'UTILISATEUR","language":"LANGUE",
+    "btn-login":"INITIALISER SESSION","btn-register":"CRÉER PROFIL","momentum":"ÉLAN",
+    "nav-dashboard":"TABLEAU","nav-log":"JOURNAL","nav-advice":"CONSEILS","nav-evolution":"ÉVOLUTION",
+    "system-status":"ÉTAT SYSTÈME","today-metrics":"MÉTRIQUES DU JOUR","recent-log":"ACTIVITÉ RÉCENTE",
+    "log-data":"SAISIR DONNÉES","log-history":"HISTORIQUE","ai-advice":"CONSEILS IA",
+    "weekly-evo":"ÉVOLUTION HEBDO","milestones":"JALONS","quick-log":"SAISIE RAPIDE",
+    "cats":["NUTRITION","SOMMEIL","FITNESS","HYDRATATION","MENTAL","SOCIAL"],
+    "sys-labels":["ÉNERGIE","SOMMEIL","NUTRITION","FITNESS","HYDRATATION","MENTAL","IMMUN"],
+    "days":["LUN","MAR","MER","JEU","VEN","SAM","DIM"],
+    "quick":["💧 Eau","🍎 Repas","😴 Sommeil","🏃 Sport","🧘 Méditation"],
+    "step-titles":["PROFIL PHYSIQUE","MODE DE VIE","HABITUDES","OBJECTIFS"],
+    "step-descs":["Calibrons votre système corporel","Parlez-nous de votre quotidien","Vos habitudes actuelles","Ce que vous voulez optimiser"],
+    "btn-next":"SUIVANT →","btn-back":"← RETOUR","btn-finish":"INITIALISER SOMA",
+    "syncing":"SYNCHRONISATION...","synced":"✓ SYNCHRONISÉ",
+    "advice":[{p:"high",t:"Moins de 7h de sommeil ces 3 dernières nuits."},{p:"med",t:"Hydratation à 60%."},{p:"med",t:"Aucune activité physique depuis 48h."},{p:"low",t:"Score mental au pic le mardi matin."}],
+    "milestones":[{icon:"⚡",t:"Série de 7 jours"},{icon:"💧",t:"Objectif hydratation 5 jours"},{icon:"🧠",t:"Score mental +18% ce mois"}]
+  },
+  de: {
+    "auth-sub":"KÖRPER-BETRIEBSSYSTEM — v2.4.1","login":"ANMELDEN","register":"REGISTRIEREN",
+    "email":"E-MAIL","password":"PASSWORT","username":"BENUTZERNAME","language":"SPRACHE",
+    "btn-login":"SITZUNG STARTEN","btn-register":"PROFIL ERSTELLEN","momentum":"SCHWUNG",
+    "nav-dashboard":"DASHBOARD","nav-log":"PROTOKOLL","nav-advice":"RATSCHLÄGE","nav-evolution":"ENTWICKLUNG",
+    "system-status":"SYSTEMSTATUS","today-metrics":"HEUTIGE METRIKEN","recent-log":"LETZTE AKTIVITÄT",
+    "log-data":"DATEN EINGEBEN","log-history":"VERLAUF","ai-advice":"KI-RATSCHLÄGE",
+    "weekly-evo":"WÖCHENTLICHE ENTWICKLUNG","milestones":"MEILENSTEINE","quick-log":"SCHNELLEINGABE",
+    "cats":["ERNÄHRUNG","SCHLAF","FITNESS","HYDRATION","MENTAL","SOZIAL"],
+    "sys-labels":["ENERGIE","SCHLAF","ERNÄHRUNG","FITNESS","HYDRATION","MENTAL","IMMUN"],
+    "days":["MO","DI","MI","DO","FR","SA","SO"],
+    "quick":["💧 Wasser","🍎 Mahlzeit","😴 Schlaf","🏃 Training","🧘 Meditation"],
+    "step-titles":["KÖRPERPROFIL","LEBENSSTIL","GEWOHNHEITEN","ZIELE"],
+    "step-descs":["Kalibrieren Sie Ihr Körperbetriebssystem","Erzählen Sie von Ihrem Alltag","Ihre aktuellen Gewohnheiten","Was Sie optimieren möchten"],
+    "btn-next":"WEITER →","btn-back":"← ZURÜCK","btn-finish":"SOMA INITIALISIEREN",
+    "syncing":"SYNCHRONISIERUNG...","synced":"✓ SYNCHRONISIERT",
+    "advice":[{p:"high",t:"Weniger als 7h Schlaf die letzten 3 Nächte."},{p:"med",t:"Hydration bei 60%."},{p:"med",t:"Keine Aktivität seit 48h."},{p:"low",t:"Mentaler Score dienstags am höchsten."}],
+    "milestones":[{icon:"⚡",t:"7-Tage-Serie"},{icon:"💧",t:"Hydrationsziel 5 Tage"},{icon:"🧠",t:"Mentaler Score +18%"}]
+  },
+  pt: {
+    "auth-sub":"SISTEMA OPERACIONAL CORPORAL — v2.4.1","login":"ENTRAR","register":"REGISTRAR",
+    "email":"EMAIL","password":"SENHA","username":"NOME DE USUÁRIO","language":"IDIOMA",
+    "btn-login":"INICIAR SESSÃO","btn-register":"CRIAR PERFIL","momentum":"IMPULSO",
+    "nav-dashboard":"PAINEL","nav-log":"REGISTRO","nav-advice":"CONSELHOS","nav-evolution":"EVOLUÇÃO",
+    "system-status":"STATUS DO SISTEMA","today-metrics":"MÉTRICAS DE HOJE","recent-log":"ATIVIDADE RECENTE",
+    "log-data":"REGISTRAR DADOS","log-history":"HISTÓRICO","ai-advice":"CONSELHOS DA IA",
+    "weekly-evo":"EVOLUÇÃO SEMANAL","milestones":"MARCOS","quick-log":"REGISTRO RÁPIDO",
+    "cats":["NUTRIÇÃO","SONO","FITNESS","HIDRATAÇÃO","MENTAL","SOCIAL"],
+    "sys-labels":["ENERGIA","SONO","NUTRIÇÃO","FITNESS","HIDRATAÇÃO","MENTAL","IMUNE"],
+    "days":["SEG","TER","QUA","QUI","SEX","SÁB","DOM"],
+    "quick":["💧 Água","🍎 Refeição","😴 Sono","🏃 Treino","🧘 Meditação"],
+    "step-titles":["PERFIL FÍSICO","ESTILO DE VIDA","HÁBITOS","OBJETIVOS"],
+    "step-descs":["Vamos calibrar seu sistema operacional corporal","Conte sobre sua vida diária","Seus hábitos atuais","O que você quer otimizar"],
+    "btn-next":"PRÓXIMO →","btn-back":"← VOLTAR","btn-finish":"INICIALIZAR SOMA",
+    "syncing":"SINCRONIZANDO...","synced":"✓ SINCRONIZADO",
+    "advice":[{p:"high",t:"Menos de 7h de sono nas últimas 3 noites."},{p:"med",t:"Hidratação em 60%."},{p:"med",t:"Sem atividade física em 48h."},{p:"low",t:"Score mental maior nas terças de manhã."}],
+    "milestones":[{icon:"⚡",t:"Sequência de 7 dias"},{icon:"💧",t:"Meta de hidratação 5 dias"},{icon:"🧠",t:"Score mental +18% este mês"}]
+  }
+};
+
+function tr(key) { return (T[lang]&&T[lang][key]) || (T['en']&&T['en'][key]) || key; }
+
+// ── FIREBASE FUNCTIONS ──
+async function fbSaveProfile(uid, data) {
+  try { await setDoc(doc(db, 'users', uid), data, { merge: true }); } catch(e) { console.error(e); }
+}
+async function fbLoadProfile(uid) {
+  try { const d = await getDoc(doc(db, 'users', uid)); return d.exists() ? d.data() : null; } catch(e) { return null; }
+}
+async function fbSaveLogs(uid, logs) {
+  try { await setDoc(doc(db, 'users', uid, 'data', 'logs'), { entries: logs.slice(0,100), updated: Date.now() }, { merge: true }); } catch(e) { console.error(e); }
+}
+async function fbLoadLogs(uid) {
+  try { const d = await getDoc(doc(db, 'users', uid, 'data', 'logs')); return d.exists() ? (d.data().entries || []) : []; } catch(e) { return []; }
+}
+async function fbSaveSystem(uid, sys) {
+  try { await setDoc(doc(db, 'users', uid, 'data', 'system'), { values: sys, updated: Date.now() }, { merge: true }); } catch(e) { console.error(e); }
+}
+async function fbLoadSystem(uid) {
+  try { const d = await getDoc(doc(db, 'users', uid, 'data', 'system')); return d.exists() ? (d.data().values || null) : null; } catch(e) { return null; }
+}
+
+// show sync indicator
+function showSync(done) {
+  const el = document.getElementById('sync-indicator');
+  if (!el) return;
+  el.textContent = done ? tr('synced') : tr('syncing');
+  el.style.color = done ? 'var(--accent)' : 'var(--warn)';
+}
+
+// ── AUTH STATE LISTENER ──
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    currentUser = user;
+    showSync(false);
+    const profile = await fbLoadProfile(user.uid);
+    if (profile) {
+      if (profile.lang) { lang = profile.lang; }
+      if (profile.onboarded) {
+        const sys = await fbLoadSystem(user.uid);
+        const logs = await fbLoadLogs(user.uid);
+        if (sys) systemValues = sys;
+        if (logs) logEntries = logs;
+        showSync(true);
+        showScreen('screen-main');
+        setTimeout(renderDashboard, 100);
+      } else {
+        showScreen('screen-onboarding');
+        renderOnboarding();
+      }
+    } else {
+      showScreen('screen-onboarding');
+      renderOnboarding();
+    }
+  } else {
+    currentUser = null;
+    showScreen('screen-auth');
+  }
+});
+
+// ── UTILS ──
+function showNotif(msg, type='ok') {
+  const n = document.createElement('div');
+  n.className = 'notification';
+  n.style.borderColor = type==='err'?'var(--accent3)':'var(--accent)';
+  n.innerHTML = `<span style="color:${type==='err'?'var(--accent3)':'var(--accent)'}">${type==='err'?'⚠':'⬡'}</span> ${msg}`;
+  document.body.appendChild(n);
+  setTimeout(() => n.remove(), 3500);
+}
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('hidden');
+}
+
+// ── AUTH FUNCTIONS ──
+window.switchAuthTab = function(tab) {
+  document.querySelectorAll('.auth-tab').forEach((t,i) => t.classList.toggle('active',(i===0&&tab==='login')||(i===1&&tab==='register')));
+  document.getElementById('auth-login').style.display = tab==='login'?'block':'none';
+  document.getElementById('auth-register').style.display = tab==='register'?'block':'none';
+};
+
+window.doLogin = async function() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  if (!email||!pass) { showNotif('Fill all fields','err'); return; }
+  const btn = document.querySelector('#auth-login .btn-primary');
+  btn.textContent = 'CONNECTING...'; btn.disabled = true;
+  try {
+    await signInWithEmailAndPassword(auth, email, pass);
+  } catch(e) {
+    showNotif(e.code==='auth/invalid-credential'?'Wrong email or password':e.message,'err');
+    btn.textContent = tr('btn-login'); btn.disabled = false;
+  }
+};
+
+window.doRegister = async function() {
+  const name = document.getElementById('reg-name').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const pass = document.getElementById('reg-pass').value;
+  const l = document.getElementById('reg-lang').value;
+  if (!name||!email||!pass) { showNotif('Fill all fields','err'); return; }
+  if (pass.length<6) { showNotif('Password min 6 characters','err'); return; }
+  const btn = document.querySelector('#auth-register .btn-primary');
+  btn.textContent = 'CREATING...'; btn.disabled = true;
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    await updateProfile(cred.user, { displayName: name });
+    lang = l;
+    await fbSaveProfile(cred.user.uid, { name, email, lang, registered: new Date().toISOString(), onboarded: false });
+  } catch(e) {
+    showNotif(e.code==='auth/email-already-in-use'?'Email already registered':e.message,'err');
+    btn.textContent = tr('btn-register'); btn.disabled = false;
+  }
+};
+
+window.doLogout = async function() {
+  await signOut(auth);
+};
+
+window.setLang = function(l) {
+  lang = l;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (T[lang]&&T[lang][key]) el.textContent = T[lang][key];
+  });
+  const lsMain = document.getElementById('lang-select-main');
+  if (lsMain) lsMain.value = l;
+  if (currentUser) fbSaveProfile(currentUser.uid, { lang: l });
+};
+
+// ── ONBOARDING ──
+const onboardingSteps = [
+  { fields: () => `<div class="fields-grid">
+      <div class="field"><label>AGE</label><input type="number" id="ob-age" placeholder="25" min="10" max="100"></div>
+      <div class="field"><label>BIOLOGICAL SEX</label><select id="ob-sex"><option>Male</option><option>Female</option><option>Other</option></select></div>
+      <div class="field"><label>HEIGHT (cm)</label><input type="number" id="ob-height" placeholder="175"></div>
+      <div class="field"><label>WEIGHT (kg)</label><input type="number" id="ob-weight" placeholder="70"></div>
+      <div class="field field-full"><label>MEDICAL CONDITIONS (optional)</label><input type="text" id="ob-medical" placeholder="e.g. asthma, diabetes..."></div>
+    </div>` },
+  { fields: () => `<div class="fields-grid">
+      <div class="field field-full"><label>OCCUPATION</label><input type="text" id="ob-job" placeholder="e.g. Student, Developer..."></div>
+      <div class="field"><label>WORK TYPE</label><select id="ob-work"><option>Remote</option><option>Office</option><option>Hybrid</option><option>Physical</option></select></div>
+      <div class="field"><label>AVG SLEEP HOURS</label><input type="number" id="ob-sleep" placeholder="7" min="1" max="14" step="0.5"></div>
+      <div class="field field-full"><label>HOBBIES</label><input type="text" id="ob-hobbies" placeholder="e.g. guitar, gaming, hiking..."></div>
+      <div class="field field-full"><label>RELATIONSHIP STATUS</label><select id="ob-relation"><option>Single</option><option>In a relationship</option><option>Married</option><option>Other</option></select></div>
+    </div>` },
+  { fields: () => `
+      <div class="field"><label>FITNESS LEVEL</label><div class="checkbox-group">
+        ${['Sedentary','Light','Moderate','Active','Athletic'].map(v=>`<div class="chip" onclick="toggleChip(this,'fitness')">${v}</div>`).join('')}
+      </div></div>
+      <div class="field" style="margin-top:16px"><label>DIET</label><div class="checkbox-group">
+        ${['Omnivore','Vegetarian','Vegan','Keto','Paleo','Mediterranean'].map(v=>`<div class="chip" onclick="toggleChip(this,'diet')">${v}</div>`).join('')}
+      </div></div>
+      <div class="field" style="margin-top:16px"><label>SPORTS</label><div class="checkbox-group">
+        ${['Running','Gym','Yoga','Swimming','Cycling','Team Sports','Martial Arts','None'].map(v=>`<div class="chip" onclick="toggleChip(this,'sports')">${v}</div>`).join('')}
+      </div></div>` },
+  { fields: () => `
+      <div class="field"><label>PRIMARY GOALS</label><div class="checkbox-group">
+        ${['Lose Weight','Build Muscle','More Energy','Better Sleep','Reduce Stress','Improve Focus','Better Nutrition','Overall Health'].map(v=>`<div class="chip" onclick="toggleChip(this,'goals')">${v}</div>`).join('')}
+      </div></div>
+      <div class="field" style="margin-top:16px"><label>HOW DID YOU FIND SOMA?</label>
+        <select><option>GitHub</option><option>Friend</option><option>Social Media</option><option>Other</option></select>
+      </div>` }
+];
+
+window.toggleChip = function(el, group) {
+  el.classList.toggle('selected');
+  if (!chipSelections[group]) chipSelections[group] = [];
+  const val = el.textContent;
+  const idx = chipSelections[group].indexOf(val);
+  if (idx===-1) chipSelections[group].push(val); else chipSelections[group].splice(idx,1);
+};
+
+function renderOnboarding() {
+  const dots = document.getElementById('step-dots');
+  if (!dots) return;
+  dots.innerHTML = '';
+  for (let i=0;i<TOTAL_ONBOARDING_STEPS;i++) {
+    const d = document.createElement('div');
+    d.className='step-dot'+(i<onboardingStep?' done':i===onboardingStep?' active':'');
+    dots.appendChild(d);
+  }
+  const titles = tr('step-titles'); const descs = tr('step-descs');
+  document.getElementById('onboarding-content').innerHTML = `
+    <div class="step-title">${titles[onboardingStep]}</div>
+    <div class="step-desc">${descs[onboardingStep]}</div>
+    ${onboardingSteps[onboardingStep].fields()}
+    <div class="step-nav">
+      ${onboardingStep>0?`<button class="btn-secondary" onclick="obBack()">${tr('btn-back')}</button>`:''}
+      <button class="btn-primary" onclick="obNext()" style="flex:1">${onboardingStep===TOTAL_ONBOARDING_STEPS-1?tr('btn-finish'):tr('btn-next')}</button>
+    </div>`;
+}
+
+window.obNext = async function() {
+  if (onboardingStep < TOTAL_ONBOARDING_STEPS-1) {
+    onboardingStep++; renderOnboarding();
+  } else {
+    if (!currentUser) return;
+    const profile = {
+      onboarded: true, lang,
+      chips: chipSelections,
+      updatedAt: new Date().toISOString()
+    };
+    showSync(false);
+    await fbSaveProfile(currentUser.uid, profile);
+    await fbSaveSystem(currentUser.uid, systemValues);
+    showSync(true);
+    showScreen('screen-main');
+    setTimeout(renderDashboard, 100);
+    showNotif('SOMA initialized — welcome, ' + (currentUser.displayName||''));
+  }
+};
+window.obBack = function() { if (onboardingStep>0){onboardingStep--;renderOnboarding();} };
+
+// ── DASHBOARD ──
+function renderDashboard() {
+  const name = currentUser?.displayName || currentUser?.email?.split('@')[0] || 'User';
+  const el = document.getElementById('topbar-username');
+  if (el) el.textContent = name.toUpperCase();
+  const av = document.getElementById('topbar-avatar');
+  if (av) av.textContent = name[0].toUpperCase();
+  const lsMain = document.getElementById('lang-select-main');
+  if (lsMain) lsMain.value = lang;
+  renderSystemRings(); renderMetricsGrid();
+  renderLogFeed('log-feed-dashboard',4); renderLogFeed('log-feed-full',20);
+  renderLogCategories(); renderLogForm();
+  renderAdvice(); renderEvolution(); renderMilestones(); renderQuickBtns();
+  drawBody(); updateMomentum(); setLang(lang);
+}
+
+function updateMomentum() {
+  const avg = Object.values(systemValues).reduce((a,b)=>a+b,0)/Object.values(systemValues).length;
+  const el = document.getElementById('momentum-score');
+  if (el) el.textContent = Math.round(avg);
+}
+
+function renderSystemRings() {
+  const c = document.getElementById('system-rings'); if (!c) return;
+  const labels = tr('sys-labels'); const keys = Object.keys(systemValues);
+  c.innerHTML = keys.map((k,i) => {
+    const v = systemValues[k];
+    const col = v>=70?'var(--accent)':v>=45?'var(--warn)':'var(--accent3)';
+    return `<div class="system-ring-item">
+      <div class="system-ring-label">${labels[i]||k}</div>
+      <div class="system-ring-bar"><div class="system-ring-fill" style="width:${v}%;background:${col}"></div></div>
+      <div class="system-ring-val">${v}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderMetricsGrid() {
+  const c = document.getElementById('metrics-grid'); if (!c) return;
+  const items = [
+    {label:'SLEEP',value:metrics.sleep,unit:'h',pct:(metrics.sleep/9)*100,good:metrics.sleep>=7},
+    {label:'WATER',value:metrics.water.toFixed(1),unit:'L',pct:(metrics.water/2.5)*100,good:metrics.water>=2},
+    {label:'CALORIES',value:metrics.calories,unit:'kcal',pct:(metrics.calories/2500)*100,good:metrics.calories>=1600&&metrics.calories<=2400},
+    {label:'STEPS',value:metrics.steps.toLocaleString(),unit:'',pct:(metrics.steps/10000)*100,good:metrics.steps>=7500},
+    {label:'MOOD',value:metrics.mood+'/10',unit:'',pct:metrics.mood*10,good:metrics.mood>=6},
+    {label:'STRESS',value:metrics.stress+'/10',unit:'',pct:metrics.stress*10,good:metrics.stress<=4},
+  ];
+  c.innerHTML = items.map(item => {
+    const cls = item.good?'good':item.pct>40?'warn':'bad';
+    const delta = Math.random()>.5?'up':'down';
+    const dval = (Math.random()*5).toFixed(1);
+    return `<div class="metric-card">
+      <div class="metric-label">${item.label}</div>
+      <div class="metric-value">${item.value}<span class="metric-unit">${item.unit}</span></div>
+      <div class="metric-bar"><div class="metric-bar-fill ${cls}" style="width:${Math.min(item.pct,100)}%"></div></div>
+      <div class="metric-delta ${delta}">${delta==='up'?'↑':'↓'} ${dval}% vs yesterday</div>
+    </div>`;
+  }).join('');
+}
+
+// ── LOG ──
+const logCatDefs = [
+  {icons:['🍎','🥗','🍕','☕'],fields:[{label:'FOOD',type:'text',ph:'e.g. pasta, salad...'},{label:'CALORIES',type:'number',ph:'350'}],metric:'calories',mult:1,sysKey:'NUTRITION'},
+  {icons:['😴'],fields:[{label:'HOURS SLEPT',type:'number',ph:'7.5',step:'0.5'}],metric:'sleep',mult:1,sysKey:'SLEEP'},
+  {icons:['🏃','💪','🧘'],fields:[{label:'ACTIVITY',type:'text',ph:'Running, Gym...'},{label:'MINUTES',type:'number',ph:'45'}],metric:'steps',mult:100,sysKey:'FITNESS'},
+  {icons:['💧'],fields:[{label:'WATER (ml)',type:'number',ph:'250'}],metric:'water',mult:0.001,sysKey:'HYDRATION'},
+  {icons:['🧠','😊'],fields:[{label:'MOOD (1-10)',type:'number',ph:'7',min:'1',max:'10'},{label:'STRESS (1-10)',type:'number',ph:'4',min:'1',max:'10'}],metric:'mood',mult:0.1,sysKey:'MENTAL'},
+  {icons:['👥'],fields:[{label:'ACTIVITY',type:'text',ph:'Dinner with friends...'},{label:'QUALITY (1-10)',type:'number',ph:'8'}],metric:'mood',mult:0.05,sysKey:'MENTAL'}
+];
+
+function renderLogCategories() {
+  const c = document.getElementById('log-categories'); if (!c) return;
+  const cats = tr('cats');
+  c.innerHTML = cats.map((cat,i)=>`<div class="log-cat${i===activeLogCat?' active':''}" onclick="setLogCat(${i})">${cat}</div>`).join('');
+}
+window.setLogCat = function(i) { activeLogCat=i; renderLogCategories(); renderLogForm(); };
+
+function renderLogForm() {
+  const c = document.getElementById('log-form'); if (!c) return;
+  const def = logCatDefs[activeLogCat];
+  const addLabel = lang==='it'?'AGGIUNGI':lang==='es'?'AGREGAR':lang==='fr'?'AJOUTER':lang==='de'?'HINZUFÜGEN':lang==='pt'?'ADICIONAR':'ADD';
+  c.innerHTML = `<div class="log-row">
+    ${def.fields.map((f,i)=>`<div class="field">
+      <label>${f.label}</label>
+      <input type="${f.type}" id="log-field-${i}" placeholder="${f.ph}" ${f.step?`step="${f.step}"`:''}${f.min?` min="${f.min}"`:''}${f.max?` max="${f.max}"`:''}></div>`).join('')}
+    <button class="btn-add" onclick="submitLog()">${addLabel}</button>
+  </div>`;
+}
+
+window.submitLog = async function() {
+  const def = logCatDefs[activeLogCat];
+  const cats = tr('cats');
+  const vals = def.fields.map((_,i)=>document.getElementById('log-field-'+i)?.value||'');
+  if (!vals[0]) { showNotif('Please fill the required field','err'); return; }
+  const numVal = parseFloat(vals[vals.length-1])||0;
+  const delta = numVal * def.mult;
+  if (def.metric==='sleep') metrics.sleep = parseFloat(vals[0])||metrics.sleep;
+  else if (def.metric==='water') metrics.water = Math.min(5, metrics.water+(parseFloat(vals[0])||0)*0.001);
+  else if (def.metric==='calories') metrics.calories += parseInt(vals[1])||0;
+  else if (def.metric==='steps') metrics.steps += Math.round(numVal*100);
+  else if (def.metric==='mood') metrics.mood = Math.min(10,Math.max(1,parseFloat(vals[0])||metrics.mood));
+  systemValues[def.sysKey] = Math.min(100,Math.max(0,systemValues[def.sysKey]+(delta>0?delta*2:delta)));
+  const entry = {
+    cat:activeLogCat, catLabel:cats[activeLogCat],
+    vals, time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+    timestamp: Date.now(),
+    icon: def.icons[Math.floor(Math.random()*def.icons.length)],
+    sysKey: def.sysKey, sysDelta: (delta*2).toFixed(1)
+  };
+  logEntries.unshift(entry);
+  weeklyData[6] = Math.round(Object.values(systemValues).reduce((a,b)=>a+b,0)/7);
+  renderSystemRings(); renderMetricsGrid();
+  renderLogFeed('log-feed-dashboard',4); renderLogFeed('log-feed-full',20);
+  updateMomentum(); drawBody(); renderEvolution();
+  def.fields.forEach((_,i)=>{ const f=document.getElementById('log-field-'+i); if(f)f.value=''; });
+  showNotif(`${entry.icon} ${entry.catLabel} logged`);
+  // sync to firebase
+  showSync(false);
+  if (currentUser) {
+    await fbSaveLogs(currentUser.uid, logEntries);
+    await fbSaveSystem(currentUser.uid, systemValues);
+  }
+  showSync(true);
+};
+
+function renderLogFeed(id, max) {
+  const c = document.getElementById(id); if (!c) return;
+  if (!logEntries.length) {
+    c.innerHTML = `<div style="font-size:11px;color:var(--text-dim);text-align:center;padding:20px">${lang==='it'?'Nessuna attività ancora':'No activity yet — start logging!'}</div>`;
+    return;
+  }
+  c.innerHTML = logEntries.slice(0,max).map(e=>`
+    <div class="log-entry">
+      <div class="log-entry-icon">${e.icon}</div>
+      <div class="log-entry-text">${e.catLabel}: ${e.vals.join(' — ')}</div>
+      <div class="log-entry-time">${e.time}</div>
+      <div class="log-entry-delta ${parseFloat(e.sysDelta)>=0?'pos':'neg'}">${parseFloat(e.sysDelta)>=0?'+':''}${e.sysDelta}</div>
+    </div>`).join('');
+}
+
+function renderQuickBtns() {
+  const c = document.getElementById('quick-btns'); if (!c) return;
+  const quick = tr('quick');
+  const quickDefs = [{cat:3,vals:['250']},{cat:0,vals:['Meal','400']},{cat:1,vals:['8']},{cat:2,vals:['Workout','30']},{cat:4,vals:['8','3']}];
+  c.innerHTML = quick.map((q,i)=>`<button class="btn-add" style="text-align:left;font-size:10px" onclick="quickLog(${i})">${q}</button>`).join('');
+  window.quickLog = async function(i) {
+    const qd = quickDefs[i]; const def = logCatDefs[qd.cat]; const cats = tr('cats');
+    const numVal = parseFloat(qd.vals[qd.vals.length-1])||0;
+    const delta = numVal * def.mult;
+    systemValues[def.sysKey] = Math.min(100,Math.max(0,systemValues[def.sysKey]+delta*2));
+    const entry = {cat:qd.cat,catLabel:cats[qd.cat],vals:qd.vals,time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),timestamp:Date.now(),icon:def.icons[0],sysKey:def.sysKey,sysDelta:(delta*2).toFixed(1)};
+    logEntries.unshift(entry);
+    weeklyData[6] = Math.round(Object.values(systemValues).reduce((a,b)=>a+b,0)/7);
+    renderSystemRings(); renderMetricsGrid(); renderLogFeed('log-feed-dashboard',4); renderLogFeed('log-feed-full',20); updateMomentum(); drawBody(); renderEvolution();
+    showNotif(`${entry.icon} ${entry.catLabel} logged`);
+    showSync(false);
+    if (currentUser) { await fbSaveLogs(currentUser.uid,logEntries); await fbSaveSystem(currentUser.uid,systemValues); }
+    showSync(true);
+  };
+}
+
+function renderAdvice() {
+  const c = document.getElementById('advice-list'); if (!c) return;
+  const advice = tr('advice');
+  const colorMap = {high:'var(--accent3)',med:'var(--warn)',low:'var(--accent)'};
+  c.innerHTML = advice.map(a=>`<div class="advice-item">
+    <div class="advice-priority ${a.p}" style="background:${colorMap[a.p]}"></div>
+    <div>${a.t}</div>
+  </div>`).join('');
+}
+
+function renderEvolution() {
+  const chart = document.getElementById('evo-chart');
+  const labels = document.getElementById('evo-labels');
+  if (!chart||!labels) return;
+  const days = tr('days');
+  chart.innerHTML = weeklyData.map((v,i)=>{
+    const h = (v/100)*110;
+    const col = v>=70?'var(--accent)':v>=50?'var(--warn)':'var(--accent3)';
+    return `<div class="evo-bar" style="height:${h}px;background:${col};opacity:${0.5+i*0.07}" data-val="${v}"></div>`;
+  }).join('');
+  labels.innerHTML = days.map(d=>`<div class="evo-label">${d}</div>`).join('');
+}
+
+function renderMilestones() {
+  const c = document.getElementById('milestones-list'); if (!c) return;
+  const ms = tr('milestones');
+  c.innerHTML = ms.map(m=>`<div class="advice-item"><span style="font-size:20px">${m.icon}</span><div style="font-size:11px">${m.t}</div></div>`).join('');
+}
+
+function drawBody() {
+  const canvas = document.getElementById('body-canvas'); if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,200,340);
+  const avg = Object.values(systemValues).reduce((a,b)=>a+b,0)/Object.values(systemValues).length;
+  const mainColor = avg>=70?'#00ffb4':avg>=45?'#ffaa00':'#ff3e6c';
+  ctx.shadowBlur=15; ctx.shadowColor=mainColor; ctx.strokeStyle=mainColor; ctx.lineWidth=1.5;
+  // body parts
+  ctx.beginPath(); ctx.arc(100,35,22,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(92,56); ctx.lineTo(88,72); ctx.moveTo(108,56); ctx.lineTo(112,72); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(88,72); ctx.lineTo(55,85); ctx.moveTo(112,72); ctx.lineTo(145,85); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(88,72); ctx.lineTo(84,160); ctx.moveTo(112,72); ctx.lineTo(116,160); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(84,160); ctx.lineTo(116,160); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(88,72); ctx.lineTo(112,72); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(55,85); ctx.lineTo(42,140); ctx.lineTo(38,180); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(145,85); ctx.lineTo(158,140); ctx.lineTo(162,180); ctx.stroke();
+  ctx.beginPath(); ctx.arc(38,183,4,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(162,183,4,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(84,160); ctx.lineTo(76,175); ctx.moveTo(116,160); ctx.lineTo(124,175); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(76,175); ctx.lineTo(124,175); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(76,175); ctx.lineTo(70,255); ctx.lineTo(68,300); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(124,175); ctx.lineTo(130,255); ctx.lineTo(132,300); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(68,300); ctx.lineTo(56,308); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(132,300); ctx.lineTo(144,308); ctx.stroke();
+  // health nodes
+  const pts = [{x:100,y:35,k:'MENTAL'},{x:100,y:90,k:'IMMUNE'},{x:100,y:115,k:'NUTRITION'},{x:100,y:140,k:'ENERGY'},{x:100,y:160,k:'FITNESS'},{x:70,y:220,k:'HYDRATION'},{x:130,y:220,k:'SLEEP'}];
+  pts.forEach(p => {
+    const val = systemValues[p.k]||70;
+    const col = val>=70?'#00ffb4':val>=45?'#ffaa00':'#ff3e6c';
+    ctx.shadowBlur=20; ctx.shadowColor=col; ctx.fillStyle=col;
+    ctx.beginPath(); ctx.arc(p.x,p.y,4+(val/100)*3,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle=col; ctx.lineWidth=0.8; ctx.globalAlpha=0.3;
+    ctx.beginPath(); ctx.arc(p.x,p.y,10+(val/100)*5,0,Math.PI*2); ctx.stroke();
+    ctx.globalAlpha=1;
+  });
+  ctx.shadowBlur=0;
+}
+setInterval(drawBody, 2000);
+
+window.switchTab = function(tab) {
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  const tabs=['dashboard','log','advice','evolution'];
+  document.querySelectorAll('.nav-item').forEach((n,i)=>{ if(tabs[i]===tab)n.classList.add('active'); });
+  if (tab==='log'){renderLogCategories();renderLogForm();}
+};
+
+// background canvas
+(function initBg(){
+  const c=document.getElementById('bg-canvas'); if(!c)return;
+  const ctx=c.getContext('2d');
+  let w,h,nodes=[];
+  function resize(){w=c.width=window.innerWidth;h=c.height=window.innerHeight;}
+  resize(); window.addEventListener('resize',resize);
+  for(let i=0;i<60;i++) nodes.push({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-.5)*0.3,vy:(Math.random()-.5)*0.3});
+  function draw(){
+    ctx.clearRect(0,0,w,h);
+    nodes.forEach(n=>{
+      n.x+=n.vx;n.y+=n.vy;
+      if(n.x<0||n.x>w)n.vx*=-1;if(n.y<0||n.y>h)n.vy*=-1;
+      ctx.beginPath();ctx.arc(n.x,n.y,1.5,0,Math.PI*2);ctx.fillStyle='rgba(0,255,180,0.5)';ctx.fill();
+    });
+    for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
+      const dx=nodes[i].x-nodes[j].x,dy=nodes[i].y-nodes[j].y,d=Math.sqrt(dx*dx+dy*dy);
+      if(d<120){ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[j].x,nodes[j].y);ctx.strokeStyle=`rgba(0,255,180,${0.15*(1-d/120)})`;ctx.lineWidth=0.5;ctx.stroke();}
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// boot animation
+(function boot(){
+  const bar=document.getElementById('boot-bar');
+  const status=document.getElementById('boot-status');
+  const msgs=['LOADING NEURAL INTERFACE...','CONNECTING TO FIREBASE...','SCANNING BIOMETRIC DATABASE...','CALIBRATING BODY SENSORS...','SYSTEM READY'];
+  let prog=0,i=0;
+  const iv=setInterval(()=>{
+    prog+=2; if(bar)bar.style.width=prog+'%';
+    if(prog%20===0&&i<msgs.length){if(status)status.textContent=msgs[i++];}
+    if(prog>=100){clearInterval(iv);}
+  },30);
+})();
+
+</script>
+
+<style>
+  :root{--bg:#020408;--bg2:#050d14;--panel:rgba(0,255,180,0.04);--border:rgba(0,255,180,0.15);--accent:#00ffb4;--accent2:#00c8ff;--accent3:#ff3e6c;--warn:#ffaa00;--text:#c8f0e8;--text-dim:#4a7a6a;--glow:0 0 20px rgba(0,255,180,0.3);}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:'Space Mono',monospace;min-height:100vh;overflow-x:hidden;}
+  #bg-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;opacity:0.4;}
+  .screen{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;transition:opacity 0.6s,transform 0.6s;}
+  .screen.hidden{opacity:0;pointer-events:none;transform:translateY(20px);}
+  body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px);pointer-events:none;z-index:9999;}
+
+  /* BOOT */
+  #screen-boot{flex-direction:column;gap:32px;text-align:center;}
+  .boot-logo{font-family:'Orbitron',sans-serif;font-size:clamp(64px,12vw,120px);font-weight:900;letter-spacing:0.3em;color:var(--accent);text-shadow:0 0 60px rgba(0,255,180,0.5),0 0 120px rgba(0,255,180,0.2);animation:pulse-logo 2s ease-in-out infinite;}
+  @keyframes pulse-logo{0%,100%{text-shadow:0 0 60px rgba(0,255,180,0.5),0 0 120px rgba(0,255,180,0.2);}50%{text-shadow:0 0 80px rgba(0,255,180,0.8),0 0 160px rgba(0,255,180,0.4);}}
+  .boot-sub{font-size:11px;letter-spacing:0.5em;color:var(--text-dim);}
+  .boot-bar-wrap{width:300px;height:2px;background:var(--border);border-radius:2px;overflow:hidden;margin:0 auto;}
+  .boot-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));width:0%;box-shadow:var(--glow);}
+  .boot-status{font-size:10px;letter-spacing:0.3em;color:var(--text-dim);height:14px;}
+
+  /* AUTH */
+  .auth-box{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:48px;width:420px;backdrop-filter:blur(20px);position:relative;overflow:hidden;}
+  .auth-box::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);}
+  .auth-title{font-family:'Orbitron',sans-serif;font-size:28px;font-weight:700;color:var(--accent);margin-bottom:6px;letter-spacing:0.2em;}
+  .auth-sub{font-size:10px;color:var(--text-dim);letter-spacing:0.3em;margin-bottom:36px;}
+  .auth-tabs{display:flex;margin-bottom:28px;border-bottom:1px solid var(--border);}
+  .auth-tab{flex:1;padding:10px;text-align:center;font-size:10px;letter-spacing:0.3em;color:var(--text-dim);cursor:pointer;transition:all 0.3s;border-bottom:2px solid transparent;margin-bottom:-1px;}
+  .auth-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:9px;letter-spacing:0.4em;color:var(--text-dim);margin-bottom:8px;}
+  .field input,.field select{width:100%;background:rgba(0,255,180,0.03);border:1px solid var(--border);border-radius:3px;padding:12px 14px;color:var(--text);font-family:'Space Mono',monospace;font-size:13px;outline:none;transition:all 0.3s;}
+  .field input:focus,.field select:focus{border-color:var(--accent);box-shadow:var(--glow);background:rgba(0,255,180,0.06);}
+  .field select option{background:#050d14;}
+  .btn-primary{width:100%;padding:14px;background:transparent;border:1px solid var(--accent);color:var(--accent);font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:0.4em;cursor:pointer;transition:all 0.3s;border-radius:3px;margin-top:8px;position:relative;overflow:hidden;}
+  .btn-primary::before{content:'';position:absolute;inset:0;background:var(--accent);transform:scaleX(0);transform-origin:left;transition:transform 0.3s ease;z-index:-1;}
+  .btn-primary:hover{color:var(--bg);} .btn-primary:hover::before{transform:scaleX(1);}
+  .btn-primary:disabled{opacity:0.5;cursor:not-allowed;}
+
+  /* ONBOARDING */
+  #screen-onboarding{padding:20px;}
+  .onboarding-wrap{width:min(700px,100%);background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:48px;backdrop-filter:blur(20px);position:relative;overflow:hidden;max-height:90vh;overflow-y:auto;}
+  .onboarding-wrap::-webkit-scrollbar{width:4px;} .onboarding-wrap::-webkit-scrollbar-thumb{background:var(--border);}
+  .onboarding-wrap::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);}
+  .step-indicator{display:flex;gap:8px;margin-bottom:36px;}
+  .step-dot{flex:1;height:2px;background:var(--border);border-radius:2px;transition:background 0.4s;}
+  .step-dot.active{background:var(--accent);box-shadow:var(--glow);} .step-dot.done{background:var(--accent2);}
+  .step-title{font-family:'Orbitron',sans-serif;font-size:18px;color:var(--accent);margin-bottom:6px;letter-spacing:0.15em;}
+  .step-desc{font-size:10px;color:var(--text-dim);letter-spacing:0.2em;margin-bottom:28px;}
+  .fields-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:8px;}
+  .fields-grid .field{margin-bottom:0;} .field-full{grid-column:1/-1;}
+  .checkbox-group{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
+  .chip{padding:6px 14px;border:1px solid var(--border);border-radius:2px;font-size:10px;letter-spacing:0.2em;cursor:pointer;transition:all 0.2s;color:var(--text-dim);}
+  .chip.selected{border-color:var(--accent);color:var(--accent);background:rgba(0,255,180,0.08);}
+  .step-nav{display:flex;gap:12px;margin-top:28px;}
+  .btn-secondary{padding:12px 24px;background:transparent;border:1px solid var(--border);color:var(--text-dim);font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:0.3em;cursor:pointer;transition:all 0.3s;border-radius:3px;}
+
+  /* MAIN */
+  #screen-main{padding:0;align-items:stretch;justify-content:stretch;overflow-y:auto;}
+  .main-layout{display:grid;grid-template-rows:60px 1fr;grid-template-columns:220px 1fr 300px;width:100%;min-height:100vh;}
+  .topbar{grid-column:1/-1;display:flex;align-items:center;padding:0 24px;border-bottom:1px solid var(--border);background:rgba(2,4,8,0.9);backdrop-filter:blur(20px);gap:16px;position:sticky;top:0;z-index:100;}
+  .topbar-logo{font-family:'Orbitron',sans-serif;font-size:20px;font-weight:900;color:var(--accent);letter-spacing:0.3em;text-shadow:var(--glow);}
+  .topbar-user{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:11px;color:var(--text-dim);}
+  .topbar-avatar{width:32px;height:32px;border-radius:50%;border:1px solid var(--accent);background:rgba(0,255,180,0.1);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--accent);cursor:pointer;}
+  .topbar-score{display:flex;align-items:center;gap:8px;padding:6px 14px;border:1px solid var(--border);border-radius:2px;font-size:10px;letter-spacing:0.2em;}
+  .topbar-score span{color:var(--accent);font-family:'Orbitron',sans-serif;font-weight:700;}
+  .sync-indicator{font-size:9px;letter-spacing:0.2em;color:var(--text-dim);transition:color 0.3s;}
+  .lang-selector{background:transparent;border:1px solid var(--border);color:var(--text-dim);font-family:'Space Mono',monospace;font-size:10px;padding:4px 8px;border-radius:2px;cursor:pointer;outline:none;}
+  .lang-selector option{background:var(--bg2);}
+  .sidebar{border-right:1px solid var(--border);padding:24px 0;display:flex;flex-direction:column;gap:4px;background:rgba(5,13,20,0.5);}
+  .nav-item{display:flex;align-items:center;gap:12px;padding:12px 20px;font-size:10px;letter-spacing:0.3em;color:var(--text-dim);cursor:pointer;transition:all 0.2s;border-left:2px solid transparent;text-transform:uppercase;}
+  .nav-item:hover{color:var(--text);background:rgba(0,255,180,0.03);}
+  .nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(0,255,180,0.05);}
+  .nav-icon{font-size:16px;width:20px;text-align:center;}
+  .content{padding:24px;overflow-y:auto;display:flex;flex-direction:column;gap:20px;}
+  .content::-webkit-scrollbar{width:4px;} .content::-webkit-scrollbar-thumb{background:var(--border);}
+  .right-panel{border-left:1px solid var(--border);padding:24px;overflow-y:auto;display:flex;flex-direction:column;gap:20px;background:rgba(5,13,20,0.3);}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:20px;position:relative;overflow:hidden;}
+  .panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.5;}
+  .panel-title{font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:0.4em;color:var(--accent);margin-bottom:16px;text-transform:uppercase;}
+  .metrics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;}
+  .metric-card{background:rgba(0,255,180,0.03);border:1px solid var(--border);border-radius:3px;padding:14px;transition:all 0.3s;cursor:default;}
+  .metric-card:hover{border-color:var(--accent);box-shadow:var(--glow);transform:translateY(-2px);}
+  .metric-label{font-size:9px;letter-spacing:0.3em;color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;}
+  .metric-value{font-family:'Orbitron',sans-serif;font-size:22px;font-weight:700;color:var(--accent);}
+  .metric-unit{font-size:10px;color:var(--text-dim);margin-left:4px;}
+  .metric-bar{height:2px;background:var(--border);border-radius:2px;margin-top:10px;overflow:hidden;}
+  .metric-bar-fill{height:100%;border-radius:2px;transition:width 1s ease;}
+  .metric-bar-fill.good{background:var(--accent);} .metric-bar-fill.warn{background:var(--warn);} .metric-bar-fill.bad{background:var(--accent3);}
+  .metric-delta{font-size:9px;margin-top:6px;} .metric-delta.up{color:var(--accent);} .metric-delta.down{color:var(--accent3);}
+  .log-categories{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+  .log-cat{padding:6px 14px;border:1px solid var(--border);border-radius:2px;font-size:9px;letter-spacing:0.3em;cursor:pointer;transition:all 0.2s;color:var(--text-dim);text-transform:uppercase;}
+  .log-cat.active{border-color:var(--accent2);color:var(--accent2);background:rgba(0,200,255,0.08);}
+  .log-form{display:flex;flex-direction:column;gap:12px;}
+  .log-row{display:flex;gap:10px;align-items:flex-end;}
+  .log-row .field{flex:1;margin:0;}
+  .btn-add{padding:12px 20px;background:transparent;border:1px solid var(--accent2);color:var(--accent2);font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:0.2em;cursor:pointer;transition:all 0.3s;border-radius:3px;white-space:nowrap;}
+  .btn-add:hover{background:var(--accent2);color:var(--bg);}
+  .log-feed{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto;}
+  .log-feed::-webkit-scrollbar{width:4px;} .log-feed::-webkit-scrollbar-thumb{background:var(--border);}
+  .log-entry{display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(0,255,180,0.02);border:1px solid var(--border);border-radius:3px;font-size:11px;animation:slide-in 0.3s ease;}
+  @keyframes slide-in{from{opacity:0;transform:translateX(-10px);}to{opacity:1;transform:translateX(0);}}
+  .log-entry-icon{font-size:16px;} .log-entry-text{flex:1;} .log-entry-time{font-size:9px;color:var(--text-dim);}
+  .log-entry-delta{font-size:10px;font-family:'Orbitron',monospace;}
+  .log-entry-delta.pos{color:var(--accent);} .log-entry-delta.neg{color:var(--accent3);}
+  .advice-list{display:flex;flex-direction:column;gap:10px;}
+  .advice-item{display:flex;gap:12px;padding:12px;background:rgba(0,255,180,0.02);border:1px solid var(--border);border-radius:3px;font-size:11px;line-height:1.6;transition:all 0.2s;}
+  .advice-item:hover{border-color:var(--accent);background:rgba(0,255,180,0.05);}
+  .advice-priority{width:3px;border-radius:2px;flex-shrink:0;}
+  .evo-chart{height:120px;position:relative;display:flex;align-items:flex-end;gap:4px;}
+  .evo-bar{flex:1;border-radius:2px 2px 0 0;transition:height 0.5s ease;position:relative;cursor:pointer;}
+  .evo-bar:hover::after{content:attr(data-val);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);font-size:9px;color:var(--accent);white-space:nowrap;padding:2px 6px;background:var(--bg2);border:1px solid var(--border);border-radius:2px;}
+  .evo-labels{display:flex;gap:4px;margin-top:6px;}
+  .evo-label{flex:1;text-align:center;font-size:8px;color:var(--text-dim);letter-spacing:0.1em;}
+  .system-rings{display:flex;flex-direction:column;gap:10px;}
+  .system-ring-item{display:flex;align-items:center;gap:12px;}
+  .system-ring-label{font-size:9px;letter-spacing:0.25em;color:var(--text-dim);width:80px;flex-shrink:0;text-transform:uppercase;}
+  .system-ring-bar{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
+  .system-ring-fill{height:100%;border-radius:2px;transition:width 1.5s cubic-bezier(0.4,0,0.2,1);}
+  .system-ring-val{font-family:'Orbitron',sans-serif;font-size:11px;color:var(--text);width:36px;text-align:right;flex-shrink:0;}
+  .notification{position:fixed;top:80px;right:24px;z-index:1000;background:var(--bg2);border:1px solid var(--accent);border-radius:4px;padding:14px 20px;font-size:11px;display:flex;align-items:center;gap:10px;animation:notif-in 0.3s ease;box-shadow:var(--glow);}
+  @keyframes notif-in{from{opacity:0;transform:translateX(20px);}to{opacity:1;transform:translateX(0);}}
+  .tab-content{display:none;} .tab-content.active{display:flex;flex-direction:column;gap:20px;}
+  .body-visual-wrap{display:flex;justify-content:center;align-items:center;}
+  #body-canvas{filter:drop-shadow(0 0 20px rgba(0,255,180,0.3));}
+  @media(max-width:900px){
+    .main-layout{grid-template-columns:1fr;grid-template-rows:60px auto 1fr auto;}
+    .sidebar{flex-direction:row;border-right:none;border-bottom:1px solid var(--border);padding:0;overflow-x:auto;}
+    .nav-item{border-left:none;border-bottom:2px solid transparent;padding:16px;white-space:nowrap;}
+    .nav-item.active{border-bottom-color:var(--accent);border-left:none;}
+    .right-panel{border-left:none;border-top:1px solid var(--border);}
+    .topbar{grid-column:1;}
+    .auth-box{width:90vw;padding:32px 24px;}
+  }
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+
+<!-- BOOT -->
+<div class="screen" id="screen-boot">
+  <div class="boot-logo">SOMA</div>
+  <div class="boot-sub">YOUR BODY OPERATING SYSTEM</div>
+  <div class="boot-bar-wrap"><div class="boot-bar" id="boot-bar"></div></div>
+  <div class="boot-status" id="boot-status">INITIALIZING...</div>
+</div>
+
+<!-- AUTH -->
+<div class="screen hidden" id="screen-auth">
+  <div class="auth-box">
+    <div class="auth-title">SOMA</div>
+    <div class="auth-sub" data-i18n="auth-sub">BODY OPERATING SYSTEM — v2.4.1</div>
+    <div class="auth-tabs">
+      <div class="auth-tab active" onclick="switchAuthTab('login')" data-i18n="login">LOGIN</div>
+      <div class="auth-tab" onclick="switchAuthTab('register')" data-i18n="register">REGISTER</div>
+    </div>
+    <div id="auth-login">
+      <div class="field"><label data-i18n="email">EMAIL ADDRESS</label><input type="email" id="login-email" placeholder="user@soma.io"></div>
+      <div class="field"><label data-i18n="password">PASSWORD</label><input type="password" id="login-pass" placeholder="••••••••"></div>
+      <button class="btn-primary" onclick="doLogin()" data-i18n="btn-login">INITIALIZE SESSION</button>
+    </div>
+    <div id="auth-register" style="display:none">
+      <div class="field"><label data-i18n="username">USERNAME</label><input type="text" id="reg-name" placeholder="your_name"></div>
+      <div class="field"><label data-i18n="email">EMAIL ADDRESS</label><input type="email" id="reg-email" placeholder="user@soma.io"></div>
+      <div class="field"><label data-i18n="password">PASSWORD</label><input type="password" id="reg-pass" placeholder="min 6 characters"></div>
+      <div class="field"><label data-i18n="language">INTERFACE LANGUAGE</label>
+        <select id="reg-lang" onchange="setLang(this.value)">
+          <option value="en">🇬🇧 English</option><option value="it">🇮🇹 Italiano</option>
+          <option value="es">🇪🇸 Español</option><option value="fr">🇫🇷 Français</option>
+          <option value="de">🇩🇪 Deutsch</option><option value="pt">🇧🇷 Português</option>
+        </select>
+      </div>
+      <button class="btn-primary" onclick="doRegister()" data-i18n="btn-register">CREATE PROFILE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ONBOARDING -->
+<div class="screen hidden" id="screen-onboarding">
+  <div class="onboarding-wrap">
+    <div class="step-indicator" id="step-dots"></div>
+    <div id="onboarding-content"></div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="screen hidden" id="screen-main">
+  <div class="main-layout">
+    <div class="topbar">
+      <div class="topbar-logo">SOMA</div>
+      <div class="topbar-score"><span id="momentum-score">87</span> <span style="color:var(--text-dim);font-size:9px;letter-spacing:0.2em" data-i18n="momentum">MOMENTUM</span></div>
+      <span class="sync-indicator" id="sync-indicator">✓ SYNCED</span>
+      <div class="topbar-user">
+        <select class="lang-selector" onchange="setLang(this.value)" id="lang-select-main">
+          <option value="en">EN</option><option value="it">IT</option><option value="es">ES</option>
+          <option value="fr">FR</option><option value="de">DE</option><option value="pt">PT</option>
+        </select>
+        <span id="topbar-username" style="letter-spacing:0.1em"></span>
+        <div class="topbar-avatar" id="topbar-avatar" onclick="doLogout()" title="Logout">⏻</div>
+      </div>
+    </div>
+    <div class="sidebar">
+      <div class="nav-item active" onclick="switchTab('dashboard')"><span class="nav-icon">◈</span><span data-i18n="nav-dashboard">DASHBOARD</span></div>
+      <div class="nav-item" onclick="switchTab('log')"><span class="nav-icon">⊕</span><span data-i18n="nav-log">LOG</span></div>
+      <div class="nav-item" onclick="switchTab('advice')"><span class="nav-icon">◉</span><span data-i18n="nav-advice">ADVICE</span></div>
+      <div class="nav-item" onclick="switchTab('evolution')"><span class="nav-icon">◈</span><span data-i18n="nav-evolution">EVOLUTION</span></div>
+    </div>
+    <div class="content">
+      <div class="tab-content active" id="tab-dashboard">
+        <div class="panel"><div class="panel-title" data-i18n="system-status">SYSTEM STATUS</div><div class="system-rings" id="system-rings"></div></div>
+        <div class="panel"><div class="panel-title" data-i18n="today-metrics">TODAY'S METRICS</div><div class="metrics-grid" id="metrics-grid"></div></div>
+        <div class="panel"><div class="panel-title" data-i18n="recent-log">RECENT ACTIVITY</div><div class="log-feed" id="log-feed-dashboard"></div></div>
+      </div>
+      <div class="tab-content" id="tab-log">
+        <div class="panel"><div class="panel-title" data-i18n="log-data">LOG DATA</div><div class="log-categories" id="log-categories"></div><div class="log-form" id="log-form"></div></div>
+        <div class="panel"><div class="panel-title" data-i18n="log-history">LOG HISTORY</div><div class="log-feed" id="log-feed-full"></div></div>
+      </div>
+      <div class="tab-content" id="tab-advice">
+        <div class="panel"><div class="panel-title" data-i18n="ai-advice">AI SYSTEM ADVICE</div><div class="advice-list" id="advice-list"></div></div>
+      </div>
+      <div class="tab-content" id="tab-evolution">
+        <div class="panel"><div class="panel-title" data-i18n="weekly-evo">WEEKLY EVOLUTION</div><div class="evo-chart" id="evo-chart"></div><div class="evo-labels" id="evo-labels"></div></div>
+        <div class="panel"><div class="panel-title" data-i18n="milestones">MILESTONES</div><div id="milestones-list" style="display:flex;flex-direction:column;gap:10px"></div></div>
+      </div>
+    </div>
+    <div class="right-panel">
+      <div class="panel body-visual-wrap" style="padding:20px"><canvas id="body-canvas" width="200" height="340"></canvas></div>
+      <div class="panel"><div class="panel-title" data-i18n="quick-log">QUICK LOG</div><div style="display:flex;flex-direction:column;gap:8px" id="quick-btns"></div></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
